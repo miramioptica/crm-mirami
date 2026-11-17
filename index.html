@@ -350,7 +350,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
       Actualizar los productos que ya existen (mismo código)
     </label>
     <div style="max-height:380px;overflow:auto;border:1px solid var(--bd);border-radius:8px"><table class="dtbl" style="font-size:.75rem"><thead><tr><th>Fila</th><th>Estado</th><th>Código</th><th>Categoría</th><th>Producto</th><th>Stock</th><th>Mín.</th><th>Costo</th><th>Venta</th></tr></thead><tbody id="inv-imp-body"></tbody></table></div>
-    <p style="font-size:.72rem;color:var(--ink3);margin-top:8px">Columnas que reconoce: <b>Código, Categoría, Producto, Stock, Stock mínimo, Precio costo, Precio venta</b> (en cualquier orden). Si un código ya existe en el inventario, se actualiza ese producto en vez de duplicarlo.</p>
+    <p style="font-size:.72rem;color:var(--ink3);margin-top:8px">Columnas que reconoce: <b>Código, Categoría, Producto, Proveedor, Stock, Stock mínimo, Precio costo, Precio venta</b> (en cualquier orden). Si un código ya existe en el inventario, se actualiza ese producto en vez de duplicarlo.</p>
   </div>
   <div class="md-foot"><button class="btn btn-ou" onclick="closeMo('mo-inv-imp')">Cancelar</button><button class="btn btn-pr" id="inv-imp-btn" onclick="invImpConfirmar()">Importar</button></div>
 </div>
@@ -511,8 +511,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
   <div class="fbar">
     <input id="inv-q" placeholder="🔎 Buscar o escanear código de barras…" oninput="renderInv()" autocomplete="off">
     <select id="inv-cf" onchange="renderInv()"><option value="">Todas las categorías</option><option>Armazones</option><option>Bisutería</option><option>Otros</option></select>
+    <select id="inv-pf" onchange="renderInv()"><option value="">Todos los proveedores</option></select>
   </div>
-  <div class="tbl-wrap"><table class="dtbl"><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Stock</th><th>P.Costo</th><th>P.Venta</th><th>Valor stock</th><th>Acciones</th></tr></thead><tbody id="inv-body"></tbody></table></div>
+  <div class="tbl-wrap"><table class="dtbl"><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Proveedor</th><th>Stock</th><th>P.Costo</th><th>P.Venta</th><th>Valor stock</th><th>Acciones</th></tr></thead><tbody id="inv-body"></tbody></table></div>
 </section>
 
 <!-- GASTOS -->
@@ -1118,6 +1119,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
       <div class="field"><label>Código / código de barras</label><input id="i-cod" placeholder="Escanea o escribe (ej: 7801234567890)" autocomplete="off"></div>
       <div class="field"><label>Categoría</label><select id="i-cat"><option>Armazones</option><option>Bisutería</option><option>Otros</option></select></div>
       <div class="field" style="grid-column:1/-1"><label>Producto *</label><input id="i-pro" placeholder="Nombre del producto"></div>
+      <div class="field" style="grid-column:1/-1"><label>Proveedor</label><input id="i-prov" list="i-prov-list" placeholder="Ej: Distribuidora Óptica Andes" autocomplete="off"><datalist id="i-prov-list"></datalist></div>
       <div class="field"><label>Stock</label><input id="i-stk" type="number" min="0" placeholder="0"></div>
       <div class="field"><label>Stock mínimo</label><input id="i-min" type="number" min="0" placeholder="0"></div>
       <div class="field"><label>Precio costo</label><input id="i-cos" type="number" min="0" placeholder="0"></div>
@@ -1950,8 +1952,9 @@ function sendBlast(){
 // ── INVENTARIO ────────────────────────────────────────────────────
 function openInv(id){
   editId=id||null;document.getElementById('mo-inv-t').textContent=id?'Editar ítem':'Agregar ítem';
-  ['i-cod','i-pro','i-stk','i-min','i-cos','i-pvt'].forEach(f=>sv(f,''));
-  if(id){const x=inv.find(i=>i.id===id);if(x){sv('i-cod',x.cod);sv('i-cat',_catInv(x.cat));sv('i-pro',x.pro);sv('i-stk',x.stk);sv('i-min',x.min);sv('i-cos',x.cos);sv('i-pvt',x.pvt)}}
+  ['i-cod','i-pro','i-prov','i-stk','i-min','i-cos','i-pvt'].forEach(f=>sv(f,''));
+  { const dl=document.getElementById('i-prov-list'); if(dl) dl.innerHTML=_invProveedores().map(p=>`<option value="${_escH(p)}">`).join(''); }
+  if(id){const x=inv.find(i=>i.id===id);if(x){sv('i-cod',x.cod);sv('i-cat',_catInv(x.cat));sv('i-pro',x.pro);sv('i-prov',x.prov||'');sv('i-stk',x.stk);sv('i-min',x.min);sv('i-cos',x.cos);sv('i-pvt',x.pvt)}}
   document.getElementById('mo-inv').classList.add('open');
 }
 /* saveInv base - overridden by async version below */
@@ -1959,15 +1962,28 @@ function openInv(id){
 // anteriores (Cristales, Lentes de contacto, Accesorios) se tratan como "Otros".
 function _catInv(c){ return (c === 'Armazones' || c === 'Bisutería') ? c : 'Otros'; }
 function delInv(id){if(!confirm('¿Eliminar?'))return;inv=inv.filter(x=>x.id!==id);LS('i',inv);renderInv();renderDash()}
+// Proveedores ya usados en el inventario (para sugerirlos y filtrar)
+function _invProveedores(){
+  const m = new Map();
+  inv.forEach(x => { const p = String(x.prov||'').trim(); if (p && !m.has(p.toLowerCase())) m.set(p.toLowerCase(), p); });
+  return [...m.values()].sort((a,b) => a.localeCompare(b,'es'));
+}
 function renderInv(){
   const q=gv('inv-q').toLowerCase(),cf=gv('inv-cf');
-  let list=inv.filter(x=>(!q||(x.pro.toLowerCase().includes(q)||(x.cod||'').toLowerCase().includes(q)))&&(!cf||_catInv(x.cat)===cf));
+  { const el=document.getElementById('inv-pf');
+    if (el) { const cur=el.value, L=_invProveedores();
+      el.innerHTML='<option value="">Todos los proveedores</option>'+L.map(p=>`<option ${p===cur?'selected':''}>${_escH(p)}</option>`).join('')+'<option value="__sin">Sin proveedor</option>';
+      if (cur==='__sin') el.value='__sin'; } }
+  const pf=gv('inv-pf');
+  let list=inv.filter(x=>(!q||(x.pro.toLowerCase().includes(q)||(x.cod||'').toLowerCase().includes(q)||(x.prov||'').toLowerCase().includes(q)))&&(!cf||_catInv(x.cat)===cf)
+    &&(!pf||(pf==='__sin'?!String(x.prov||'').trim():String(x.prov||'').trim().toLowerCase()===pf.toLowerCase())));
   const tb=document.getElementById('inv-body');
-  if(!list.length){tb.innerHTML='<tr class="empty"><td colspan="8">Sin ítems en inventario.</td></tr>';return}
+  if(!list.length){tb.innerHTML='<tr class="empty"><td colspan="9">Sin ítems en inventario.</td></tr>';return}
   tb.innerHTML=list.map(x=>`<tr>
     <td style="font-size:.7rem;color:var(--ink3)">${x.cod||'—'}</td>
     <td style="font-weight:500">${x.pro}</td>
     <td><span class="badge b-bl">${_catInv(x.cat)}</span></td>
+    <td style="font-size:.78rem">${x.prov?_escH(x.prov):'<span style="color:var(--ink3)">—</span>'}</td>
     <td>${x.stk<=x.min?`<span class="badge b-re">${x.stk}</span>`:`<span class="badge b-gr">${x.stk}</span>`}</td>
     <td>${$m(x.cos)}</td><td>${$m(x.pvt)}</td><td>${$m(x.stk*x.cos)}</td>
     <td><div class="ra"><button class="btn btn-ou btn-xs" onclick="openInv('${x.id}')">✏️</button><button class="btn btn-er btn-xs" onclick="delInv('${x.id}')">✕</button></div></td>
@@ -3781,6 +3797,7 @@ CREATE TABLE IF NOT EXISTS inventario (
   cod         TEXT,
   cat         TEXT,
   pro         TEXT NOT NULL,
+  prov        TEXT,
   stk         INTEGER DEFAULT 0,
   min         INTEGER DEFAULT 0,
   cos         NUMERIC DEFAULT 0,
@@ -3844,6 +3861,7 @@ ALTER TABLE ventas ADD COLUMN IF NOT EXISTS pag_sal     TEXT;
 ALTER TABLE ventas ADD COLUMN IF NOT EXISTS boleta_path TEXT;
 ALTER TABLE ventas ADD COLUMN IF NOT EXISTS boleta_name TEXT;
 ALTER TABLE ventas ADD COLUMN IF NOT EXISTS datos       JSONB DEFAULT '{}';
+ALTER TABLE inventario ADD COLUMN IF NOT EXISTS prov   TEXT;
 
 -- ── Storage: bucket privado para boletas PDF ───────────────────
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -3945,7 +3963,20 @@ async function sbUpsert(table, rows) {
     });
   if (!validRows.length) return;
   // Use upsert endpoint with on_conflict
-  return sbFetch(table, 'POST', validRows, '?on_conflict=id');
+  // Si Supabase todavía no tiene la columna "prov" (no se ejecutó el script nuevo), se guarda igual sin el proveedor y se avisa.
+  if (table === 'inventario' && window._sinColProv) validRows.forEach(r => delete r.prov);
+  try {
+    return await sbFetch(table, 'POST', validRows, '?on_conflict=id');
+  } catch (e) {
+    const m = String(e && e.message || '');
+    if (table === 'inventario' && !window._sinColProv && /prov/.test(m) && /PGRST204|schema cache|column/.test(m)) {
+      window._sinColProv = true;
+      toast('⚠️ Supabase aún no tiene la columna “Proveedor”: el inventario se guardó, pero sin el proveedor. Ejecuta el script SQL actualizado (⚙️ Config → Ver script SQL).', 'wa');
+      validRows.forEach(r => delete r.prov);
+      return sbFetch(table, 'POST', validRows, '?on_conflict=id');
+    }
+    throw e;
+  }
 }
 
 async function sbDelete(table, id) {
@@ -4661,7 +4692,7 @@ async function saveInv() {
   const pro=gv('i-pro');if(!pro){toast('Nombre obligatorio.','er');return;}
   { const cod=gv('i-cod'); const dup = cod && inv.find(x=>x.id!==editId && x.cod && _nTxt(x.cod)===_nTxt(cod));
     if (dup) { toast('❌ El código '+cod+' ya lo tiene "'+dup.pro+'". Cada producto debe tener un código distinto.','er'); return; } }
-  const d={cod:gv('i-cod'),cat:gv('i-cat'),pro,stk:parseInt(gv('i-stk'))||0,min:parseInt(gv('i-min'))||0,cos:parseFloat(gv('i-cos'))||0,pvt:parseFloat(gv('i-pvt'))||0};
+  const d={cod:gv('i-cod'),cat:gv('i-cat'),pro,prov:gv('i-prov').trim(),stk:parseInt(gv('i-stk'))||0,min:parseInt(gv('i-min'))||0,cos:parseFloat(gv('i-cos'))||0,pvt:parseFloat(gv('i-pvt'))||0};
   let savedRow;
   if(editId){const i=inv.findIndex(x=>x.id===editId);if(i>=0){inv[i]={...inv[i],...d};savedRow=inv[i];}}
   else{savedRow={id:uid(),...d};inv.unshift(savedRow);}
@@ -5563,6 +5594,7 @@ function prepareForDB(table, row) {
       cod:        row.cod || '',
       cat:        row.cat || '',
       pro:        row.pro || '',
+      prov:       row.prov || '',
       stk:        Number(row.stk) || 0,
       min:        Number(row.min) || 0,
       cos:        Number(row.cos) || 0,
@@ -6152,7 +6184,7 @@ async function deleteCoti(id){
 /* ══════════ INVENTARIO: IMPORTAR / EXPORTAR EXCEL ══════════ */
 const _CDN_XLSX = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 const INV_CATS = ['Armazones','Bisutería','Otros'];
-const INV_COLS = [['cod','Código'],['cat','Categoría'],['pro','Producto'],['stk','Stock'],['min','Stock mínimo'],['cos','Precio costo'],['pvt','Precio venta']];
+const INV_COLS = [['cod','Código'],['cat','Categoría'],['pro','Producto'],['prov','Proveedor'],['stk','Stock'],['min','Stock mínimo'],['cos','Precio costo'],['pvt','Precio venta']];
 let _invImp = null;   // {filas:[...]} de la importación en curso
 async function _libXlsx(){ if(!window.XLSX) await _loadScript(_CDN_XLSX); return window.XLSX; }
 function _nTxt(t){ return String(t==null?'':t).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,''); }
@@ -6166,6 +6198,7 @@ function _invCampo(h){
   if(n==='stock'||n==='cantidad'||n==='cant'||n==='unidades'||n==='existencia'||n==='stockactual') return 'stk';
   if(n.includes('costo')||n==='cos'||n==='preciocompra'||n==='compra') return 'cos';
   if(n.includes('venta')||n==='precio'||n==='pvp'||n==='pvt'||n==='valor'||n==='precioventa') return 'pvt';
+  if(n.startsWith('proveed')||n==='prov'||n==='distribuidor') return 'prov';
   if(['producto','nombre','descripcion','detalle','articulo','item','pro','modelo'].includes(n)) return 'pro';
   return null;
 }
@@ -6218,6 +6251,8 @@ async function invImportarArchivo(inp){
       const wb=X.read(new Uint8Array(await file.arrayBuffer()),{type:'array',raw:false,codepage:65001});
       const hoja=wb.Sheets[wb.SheetNames[0]];
       matriz=X.utils.sheet_to_json(hoja,{header:1,raw:true,defval:''});
+      // Texto tal como se ve en Excel (para no perder los ceros a la izquierda de los códigos, ej. 000001)
+      try { matriz._txt = X.utils.sheet_to_json(hoja,{header:1,raw:false,defval:''}); } catch(_) {}
     }catch(e){
       if(!esCSV){ toast('❌ No se pudo leer el Excel ('+(e.message||'sin conexión')+'). Si no hay internet, guarda el archivo como CSV e impórtalo.','er'); return; }
       matriz=_parseCSV(await file.text());
@@ -6229,12 +6264,20 @@ async function invImportarArchivo(inp){
   if(hi<0){ toast('❌ No encontré los encabezados. La primera fila debe decir Código, Categoría, Producto, Stock, Precio venta… (descarga la plantilla).','er'); return; }
   const campos=matriz[hi].map(_invCampo);
   if(!campos.includes('pro')){ toast('❌ Falta la columna "Producto".','er'); return; }
+  // Código: si en Excel es un número con formato (ej. 1 mostrado como 000001), usar el texto que se ve
+  { const jc=campos.indexOf('cod');
+    if (jc>=0 && matriz._txt) for (let r=hi+1; r<matriz.length; r++) {
+      const raw=matriz[r] && matriz[r][jc], w=matriz._txt[r] && String(matriz._txt[r][jc]||'').trim();
+      if (typeof raw==='number' && w && /^\d+$/.test(w) && Number(w)===raw) matriz[r][jc]=w;
+      else if (typeof raw==='number' && Number.isInteger(raw)) matriz[r][jc]=raw.toLocaleString('en-US',{useGrouping:false,maximumFractionDigits:0});
+    } }
   const filas=[];
   matriz.slice(hi+1).forEach((r,k)=>{
     const o={}; campos.forEach((c,j)=>{ if(c && o[c]===undefined) o[c]=r[j]; });
     if(Object.values(o).every(v=>String(v??'').trim()==='')) return;     // fila vacía
     const f={fila:hi+k+2, avisos:[], error:''};
     f.cod=String(o.cod??'').trim(); f.pro=String(o.pro??'').trim();
+    if ('prov' in o) f.prov=String(o.prov??'').trim();   // si el Excel no trae la columna, no se toca el proveedor
     const c=_invCat(o.cat); f.cat=c.cat; if(c.aviso) f.avisos.push(c.aviso);
     for(const k2 of ['stk','min','cos','pvt']){
       const r2=_invNum(o[k2]); f[k2]=Math.max(0, k2==='stk'||k2==='min' ? Math.round(r2.n) : Math.round(r2.n));
@@ -6249,8 +6292,10 @@ async function invImportarArchivo(inp){
   invImpRender();
   document.getElementById('mo-inv-imp').classList.add('open');
 }
+// Códigos solo numéricos: 000001 y 1 se consideran el mismo producto
+function _codNumIgual(a,b){ a=String(a||'').trim(); b=String(b||'').trim(); return /^\d+$/.test(a) && /^\d+$/.test(b) && a.replace(/^0+/,'')===b.replace(/^0+/,''); }
 function _invExistente(f){
-  if(f.cod){ const k=_nTxt(f.cod); return inv.find(i=>_nTxt(i.cod)===k)||null; }
+  if(f.cod){ const k=_nTxt(f.cod); return inv.find(i=>_nTxt(i.cod)===k) || inv.find(i=>_codNumIgual(i.cod,f.cod)) || null; }
   return inv.find(i=>!i.cod && _nTxt(i.pro)===_nTxt(f.pro) && _catInv(i.cat)===_catInv(f.cat))||null;
 }
 function invImpRender(){
@@ -6265,7 +6310,7 @@ function invImpRender(){
       if(ex){ if(upd){ est='↻ Actualiza'; col='#9B5E00'; nU++; f._acc='upd'; f._id=ex.id; } else { est='— Ya existe (se omite)'; col='var(--ink3)'; nS++; f._acc='skip'; } }
       else { est='+ Nuevo'; col='var(--ok)'; nN++; f._acc='new'; } }
     const av=f.avisos.length?`<div style="font-size:.66rem;color:#9B5E00">⚠ ${E(f.avisos.join(' · '))}</div>`:'';
-    return `<tr><td>${f.fila}</td><td style="color:${col};font-weight:600;min-width:150px;max-width:240px;white-space:normal">${E(est)}${av}</td><td>${E(f.cod||'—')}</td><td>${E(f.cat)}</td><td>${E(f.pro||'—')}</td><td>${f.stk}</td><td>${f.min}</td><td>${$m(f.cos)}</td><td>${$m(f.pvt)}</td></tr>`;
+    return `<tr><td>${f.fila}</td><td style="color:${col};font-weight:600;min-width:150px;max-width:240px;white-space:normal">${E(est)}${av}</td><td>${E(f.cod||'—')}</td><td>${E(f.cat)}</td><td>${E(f.pro||'—')}${f.prov?`<div style="font-size:.68rem;color:var(--ink3)">${E(f.prov)}</div>`:''}</td><td>${f.stk}</td><td>${f.min}</td><td>${$m(f.cos)}</td><td>${$m(f.pvt)}</td></tr>`;
   });
   document.getElementById('inv-imp-body').innerHTML=rows.join('')||'<tr class="empty"><td colspan="9">Sin filas.</td></tr>';
   document.getElementById('inv-imp-resumen').innerHTML=`Archivo <b>${E(_invImp.archivo)}</b>: <b style="color:var(--ok)">${nN} nuevos</b> · <b style="color:#9B5E00">${nU} se actualizan</b>${nS?` · ${nS} se omiten`:''}${nE?` · <b style="color:var(--err)">${nE} con error (no se importan)</b>`:''}`;
@@ -6278,6 +6323,7 @@ async function invImpConfirmar(){
   const cambios=[];
   _invImp.filas.forEach(f=>{
     const d={cod:f.cod,cat:f.cat,pro:f.pro,stk:f.stk,min:f.min,cos:f.cos,pvt:f.pvt};
+    if (f.prov !== undefined) d.prov=f.prov;
     if(f._acc==='new'){ const it={id:uid(),...d}; inv.push(it); cambios.push(it); }
     else if(f._acc==='upd'){ const i=inv.findIndex(x=>x.id===f._id); if(i>=0){ inv[i]={...inv[i],...d}; cambios.push(inv[i]); } }
   });
@@ -6290,15 +6336,15 @@ async function invImpConfirmar(){
 // Plantilla (vacía con ejemplos) o inventario actual
 async function invDescargarExcel(actual){
   const enc=INV_COLS.map(c=>c[1]);
-  const datos = actual ? inv.map(i=>[i.cod||'',_catInv(i.cat),i.pro||'',Number(i.stk)||0,Number(i.min)||0,Number(i.cos)||0,Number(i.pvt)||0])
-    : [['ARM-001','Armazones','Ray-Ban RB5154 Clubmaster',4,2,38000,89000],['BIS-001','Bisutería','Aros de plata 925 con perla',6,2,14000,35000],['OTR-001','Otros','Lentes de contacto Acuvue Oasys (caja 6)',3,2,18000,32000]];
+  const datos = actual ? inv.map(i=>[i.cod||'',_catInv(i.cat),i.pro||'',i.prov||'',Number(i.stk)||0,Number(i.min)||0,Number(i.cos)||0,Number(i.pvt)||0])
+    : [['ARM-001','Armazones','Ray-Ban RB5154 Clubmaster','Distribuidora Óptica Andes',4,2,38000,89000],['BIS-001','Bisutería','Aros de plata 925 con perla','Platería del Sur',6,2,14000,35000],['OTR-001','Otros','Lentes de contacto Acuvue Oasys (caja 6)','Distribuidora Óptica Andes',3,2,18000,32000]];
   const nombre = actual ? `inventario_mirami_${tod()}` : 'plantilla_inventario_mirami';
   try{
     const X=await _libXlsx();
     const ws=X.utils.aoa_to_sheet([enc,...datos]);
-    ws['!cols']=[{wch:12},{wch:18},{wch:38},{wch:8},{wch:12},{wch:13},{wch:13}];
+    ws['!cols']=[{wch:12},{wch:18},{wch:38},{wch:28},{wch:8},{wch:12},{wch:13},{wch:13}];
     const wb=X.utils.book_new(); X.utils.book_append_sheet(wb,ws,'Inventario');
-    if(!actual){ const ay=X.utils.aoa_to_sheet([['Columna','Qué poner'],['Código','Código único (ej: ARM-001). Si ya existe en el CRM, se actualiza ese producto'],['Categoría',INV_CATS.join(', ')],['Producto','Nombre del producto (obligatorio)'],['Stock','Unidades disponibles'],['Stock mínimo','Aviso cuando quedan pocas'],['Precio costo','Sin puntos ni $ (ej: 38000)'],['Precio venta','El precio que la orden de venta toma automáticamente']]); ay['!cols']=[{wch:14},{wch:80}]; X.utils.book_append_sheet(wb,ay,'Instrucciones'); }
+    if(!actual){ const ay=X.utils.aoa_to_sheet([['Columna','Qué poner'],['Código','Código único (ej: ARM-001). Si ya existe en el CRM, se actualiza ese producto'],['Categoría',INV_CATS.join(', ')],['Producto','Nombre del producto (obligatorio)'],['Proveedor','Quién te vende el producto (opcional). Si el Excel no trae esta columna, el proveedor de los productos que ya existen no se cambia'],['Stock','Unidades disponibles'],['Stock mínimo','Aviso cuando quedan pocas'],['Precio costo','Sin puntos ni $ (ej: 38000)'],['Precio venta','El precio que la orden de venta toma automáticamente']]); ay['!cols']=[{wch:14},{wch:80}]; X.utils.book_append_sheet(wb,ay,'Instrucciones'); }
     X.writeFile(wb, nombre+'.xlsx');
   }catch(e){
     // sin librería: CSV con ; (abre directo en Excel en español)
